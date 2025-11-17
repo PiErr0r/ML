@@ -11,82 +11,71 @@ class Network:
         self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
         self.weights = [np.random.randn(y, x) for x, y in zip(sizes[:-1], sizes[1:])]
 
+        self.act_fn = sigmoid
+        self.act_fn_prime = sigmoid_prime
+
     def feedforward(self, a):
         for b, w in zip(self.biases, self.weights):
-            a = sigmoid(np.dot(w, a) + b)
+            a = w @ a + b
         return a
 
-    def SGD(self, training_data, epochs, mini_batch_size, eta, test_data=None):
-        """
-        'training_data' is list of tuples (x, y) where 'x' is input and 'y' is desired output
-        if 'test_data' is provided the network will be evaluated against it after each epoch
-            useful for tracking progress but slows down the training
-        """
-
-        if test_data: n_test = len(test_data)
-
+    def train(self, training_data, epochs, mini_batch_size, eta, test_data=None):
         n = len(training_data)
-        for j in range(epochs):
+        n_test = 0 if test_data is None else len(test_data)
+
+        for epoch in range(epochs):
             random.shuffle(training_data)
-            mini_batches = [training_data[k:k+mini_batch_size] for k in range(0, n, mini_batch_size)]
-            for mini_batch in mini_batches:
-                self.update_mini_batch(mini_batch, eta)
-            if test_data:
-                print(f"Epoch {j}: {self.evaluate(test_data)} / {n_test}")
+            for k in range(0, n, mini_batch_size):
+                mini_batch = training_data[k:k + mini_batch_size]
+                self.SGD(mini_batch, eta)
+
+            if not test_data is None:
+                E = self.evaluate(test_data)
+                print(f"Epoch {epoch}: {E}/{n_test}")
             else:
-                print(f"Epoch {j} complete")
+                print(f"Epoch {epoch} complete")
 
-    def update_mini_batch(self, mini_batch, eta):
+    def SGD(self, data, eta):
+        m = len(data)
+        nabla_b, nabla_w = self.backprop(data)
+        self.biases = [(b.T - (eta / m) * dnb.sum(axis=1)).T for b, dnb in zip(self.biases, nabla_b)]
+        self.weights = [w - (eta / m) * dnw for w, dnw in zip(self.weights, nabla_w)]
+
+    def backprop(self, data):
         nabla_b = [np.zeros(b.shape) for b in self.biases]
         nabla_w = [np.zeros(w.shape) for w in self.weights]
 
-        for x, y in mini_batch:
-            delta_nabla_b, delta_nabla_w = self.backprop(x, y)
-            nabla_b = [nb + dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
-            nabla_w = [nw + dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
+        x, y = zip(*data)
+        x = np.array(x).transpose(2, 1, 0)[0]
+        y = np.array(y).transpose(2, 1, 0)[0]
 
-        self.weights = [w - (eta / len(mini_batch)) * nw for w, nw in zip(self.weights, nabla_w)]
-        self.biases = [b - (eta / len(mini_batch)) * nb for b, nb in zip(self.biases, nabla_b)]
-
-    def backprop(self, x, y):
-        nabla_b = [np.zeros(b.shape) for b in self.biases]
-        nabla_w = [np.zeros(w.shape) for w in self.weights]
-
-        # feedforward
+        activations = [x]
         activation = x
-        activations = [x] # list to store all the activations, layer by layer
-        zs = [] # list to store all the z vectors, layer by layer
+        zs = []
         for b, w in zip(self.biases, self.weights):
-            z = np.dot(w, activation)+b
+            z = w @ activation + b
             zs.append(z)
-            activation = sigmoid(z)
+            activation = self.act_fn(z)
             activations.append(activation)
 
-        # backward pass
-        delta = self.cost_derivative(activations[-1], y) * \
-            sigmoid_prime(zs[-1])
+        delta = self.cost_derivative(y, activations[-1]) * self.act_fn_prime(zs[-1])
         nabla_b[-1] = delta
-        nabla_w[-1] = np.dot(delta, activations[-2].transpose())
-
-        # Note that the variable l in the loop below is used a little
-        # differently to the notation in Chapter 2 of the book.  Here,
-        # l = 1 means the last layer of neurons, l = 2 is the
-        # second-last layer, and so on.  It's a renumbering of the
-        # scheme in the book, used here to take advantage of the fact
-        # that Python can use negative indices in lists.
+        nabla_w[-1] = delta @ activations[-2].T
         for l in range(2, self.num_layers):
-            z = zs[-l]
-            sp = sigmoid_prime(z)
-            delta = np.dot(self.weights[-l+1].transpose(), delta) * sp
+            prev = -l + 1
+            nxt = -l - 1
+            delta = (self.weights[prev].T @ delta) * self.act_fn_prime(zs[-l])
             nabla_b[-l] = delta
-            nabla_w[-l] = np.dot(delta, activations[-l-1].transpose())
+            nabla_w[-l] = delta @ activations[nxt].T
 
-        return (nabla_b, nabla_w)
+        return nabla_b, nabla_w
+
+
+    def cost_derivative(self, y, a):
+        return a - y
 
     def evaluate(self, test_data):
         test_results = [(np.argmax(self.feedforward(x)), y)
-                        for (x, y) in test_data]
+                         for (x, y) in test_data]
         return sum(int(x == y) for (x, y) in test_results)
 
-    def cost_derivative(self, output_activations, y):
-        return (output_activations-y)
