@@ -1,18 +1,21 @@
 import random
 
 import numpy as np
-from activation_functions import sigmoid, sigmoid_prime
+from activation_functions import Sigmoid
+from cost_functions import CrossEntropyCost
 
 class Network:
-    def __init__(self, sizes):
+    def __init__(self, sizes, activation=Sigmoid, cost=CrossEntropyCost):
         self.num_layers = len(sizes)
         self.sizes = sizes
 
+        np.random.seed(0)
         self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
         self.weights = [np.random.randn(y, x) for x, y in zip(sizes[:-1], sizes[1:])]
 
-        self.act_fn = sigmoid
-        self.act_fn_prime = sigmoid_prime
+        self.act = activation
+        self.cost = cost
+        self.cnt = 0
 
     def feedforward(self, a):
         for b, w in zip(self.biases, self.weights):
@@ -24,7 +27,7 @@ class Network:
         n_test = 0 if test_data is None else len(test_data)
 
         for epoch in range(epochs):
-            random.shuffle(training_data)
+            #random.shuffle(training_data)
             for k in range(0, n, mini_batch_size):
                 mini_batch = training_data[k:k + mini_batch_size]
                 self.SGD(mini_batch, eta)
@@ -36,10 +39,14 @@ class Network:
                 print(f"Epoch {epoch} complete")
 
     def SGD(self, data, eta):
+        self.cnt += 1
         m = len(data)
         nabla_b, nabla_w = self.backprop(data)
-        self.biases = [(b.T - (eta / m) * dnb.sum(axis=1)).T for b, dnb in zip(self.biases, nabla_b)]
+        self.biases = [(b.T - (eta / m) * dnb).T for b, dnb in zip(self.biases, nabla_b)]
         self.weights = [w - (eta / m) * dnw for w, dnw in zip(self.weights, nabla_w)]
+        if self.cnt == 4000:
+            print(self.weights[1])
+            exit()
 
     def backprop(self, data):
         nabla_b = [np.zeros(b.shape) for b in self.biases]
@@ -55,17 +62,17 @@ class Network:
         for b, w in zip(self.biases, self.weights):
             z = w @ activation + b
             zs.append(z)
-            activation = self.act_fn(z)
+            activation = self.act.fn(z)
             activations.append(activation)
 
-        delta = self.cost_derivative(y, activations[-1]) * self.act_fn_prime(zs[-1])
-        nabla_b[-1] = delta
+        delta = self.cost.delta(zs[-1], activations[-1], y)
+        nabla_b[-1] = delta.sum(axis=1)
         nabla_w[-1] = delta @ activations[-2].T
         for l in range(2, self.num_layers):
             prev = -l + 1
             nxt = -l - 1
-            delta = (self.weights[prev].T @ delta) * self.act_fn_prime(zs[-l])
-            nabla_b[-l] = delta
+            delta = (self.weights[prev].T @ delta) * self.act.delta(zs[-l])
+            nabla_b[-l] = delta.sum(axis=1)
             nabla_w[-l] = delta @ activations[nxt].T
 
         return nabla_b, nabla_w

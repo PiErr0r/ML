@@ -1,11 +1,11 @@
-from network import Network
+from nnetwork import Network
 from cost_functions import QuadraticCost
 import mnist_loader
 
 def _main():
     training_data, validation_data, test_data = mnist_loader.load_data_wrapper()
-    N = Network([784, 30, 10], cost=QuadraticCost)
-    N.train(training_data, 30, 10, 3.0, test_data=test_data)
+    N = Network([784, 30, 10])
+    N.SGD(training_data, 30, 10, 3.0, test_data=test_data)
 
 if __name__ == '__main__':
     _main()
